@@ -38,7 +38,7 @@ RD는 생략 시 9.3101751 m이고 한 데이터셋의 RD는 동일해야 합니
 `MyDrive/multirotor2_results/B(P4)`에 저장합니다.
 설정 셀에서 `DRIVE_DATA`, `DRIVE_CSV`를 새 CFD 데이터와 h/RD CSV에 맞추세요.
 `PREDICT_H_OVER_RD`를 지정하면 해당 높이로 예측하며 None이면 기준 케이스의 높이를 사용합니다.
-GitHub 저장소 게시가 완료된 후 노트북의 clone 셀을 실행할 수 있습니다.
+노트북의 clone 셀은 공개 GitHub 저장소 `jo-ban/multirotor2`의 `main`을 사용합니다.
 
 ## 실행
 
