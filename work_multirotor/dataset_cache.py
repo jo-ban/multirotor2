@@ -7,7 +7,7 @@ import pandas as pd
 
 from data_utils_cylindrical import (
     center_from_row, disk_loading_from_row, geometry_from_row,
-    load_case_input, rotor_ground_z_from_row, CYLINDER_RADIUS_OVER_RD,
+    load_case_input, rotor_ground_z_from_row, CYLINDER_RADIUS_OVER_RD, sampling_z_max,
 )
 
 
@@ -26,6 +26,9 @@ def dataset_status(root, csv_path, radius_over_rd=CYLINDER_RADIUS_OVER_RD):
     try:
         for path in paths:
             meta = load_case_input(path)
+            capped_top = sampling_z_max(meta['ground_z_m'], meta['z_max_m'], meta['disk_radius_m'])
+            if not np.isclose(meta['z_max_m'], capped_top) or not np.isclose(meta['z_m'][-1], capped_top):
+                return False, f'{path.name}: 지면 기준 0~2RD로 다시 추출해야 합니다.'
             if not np.isclose(meta['radius_over_rd'], radius_over_rd, rtol=1e-6):
                 return False, f'{path.name}: 영역 반경이 다릅니다.'
             folder = meta['source_folder']

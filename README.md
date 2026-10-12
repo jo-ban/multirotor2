@@ -72,3 +72,11 @@ HTML은 Plotly를 포함하므로 내려받아 회전·확대·성분 및 FATO/S
 python work_multirotor/evaluate_error.py --replot --output-dir /data/results/evaluation
 python work_multirotor/visualize_prediction_3d.py --input /data/results/prediction.npz --output /data/results/prediction_3d.html
 ```
+
+## Z축 샘플링 범위
+
+FATO·SA 모두 지면부터 `min(mesh_z_max, ground_z + 2*RD)`까지 샘플링합니다.
+기본 256개 Z격자점이 이 범위에 균일하게 배치됩니다. RD=9.3101751 m이면 지면 위 최대 18.6203502 m입니다.
+`z/R_D` 입력은 실제 CFD 절대좌표를 유지하며 로터 높이 `h/RD`와 독립적입니다.
+Colab의 기존 데이터·모델·결과 저장경로는 유지합니다. 기존 추출 데이터를 지운 경우 기존 Colab 노트북 그대로 추출·학습 셀을 다시 실행하세요.
+예측의 `--z-max`에도 같은 2RD 상한을 적용합니다.

@@ -7,6 +7,7 @@ import torch
 
 from data_utils_cylindrical import (
     DEFAULT_SHAPE_ZTHETA,
+    sampling_z_max,
     CYLINDER_RADIUS_OVER_RD,
     SA_RADIUS_OVER_RD,
     TARGET_SCALE,
@@ -88,8 +89,7 @@ def predict_cylindrical_surface(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if not np.isfinite([ground_z_m, z_max_m]).all() or z_max_m <= ground_z_m:
         raise ValueError("Require finite --z-max > --ground-z")
-    if not ground_z_m < rotor_z_m < z_max_m:
-        raise ValueError("Rotor height derived from h/RD must lie between ground and z_max")
+    z_max_m = sampling_z_max(ground_z_m, z_max_m, disk_radius_m)
     nz, ntheta = map(int, shape_ztheta)
     z_m = np.linspace(ground_z_m, z_max_m, nz, dtype=np.float32)
     z_over_rd = z_m / disk_radius_m

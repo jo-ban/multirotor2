@@ -9,6 +9,7 @@ import pyvista as pv
 
 from data_utils_cylindrical import (
     COORDINATE_SYSTEM,
+    sampling_z_max,
     CYLINDER_RADIUS_OVER_RD,
     SA_RADIUS_OVER_RD,
     CYLINDER_RADII_OVER_RD,
@@ -36,10 +37,11 @@ def _folder_name(value):
 
 
 def _make_cylinder_points(center_x, center_y, disk_radius_m, ground_z_m, z_max_m, nz, ntheta, radius_over_rd=CYLINDER_RADIUS_OVER_RD):
-    """지면부터 메시 최대 z까지 증가하는 r=2R_D 원통 좌표를 만든다."""
+    """지면부터 최대 지면+2RD까지 원통 샘플링 좌표를 만든다."""
     theta = np.linspace(0.0, 2.0 * np.pi, ntheta, endpoint=False, dtype=np.float64)
     if not np.isfinite([ground_z_m, z_max_m, disk_radius_m]).all() or z_max_m <= ground_z_m or disk_radius_m <= 0:
         raise ValueError("Require finite ground_z < mesh z_max and R_D > 0")
+    z_max_m = sampling_z_max(ground_z_m, z_max_m, disk_radius_m)
     z_m = np.linspace(ground_z_m, z_max_m, nz, dtype=np.float64)
     z_over_rd = z_m / disk_radius_m
     theta_grid, z_grid = np.meshgrid(theta, z_m, indexing="xy")
@@ -84,19 +86,14 @@ def _extract_surface(
     suffix = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
     case_id = make_case_id(l_over_d, disk_radius_m, height_over_rd) + "_ZRD_" + suffix
     input_path = out / "inputs" / f"input_{case_id}.npz"
-    if input_path.exists():
-        meta = load_case_input(input_path)
-        if not np.isclose(meta["radius_over_rd"], radius_over_rd):
-            raise ValueError("FATO and SA must use separate output roots")
-        for component in ("u", "v", "w"):
-            target = out / f"targets_{component}" / f"{component}_{case_id}.npy"
-            if not target.is_file() or np.load(target, mmap_mode="r").shape != (nz, ntheta):
-                raise RuntimeError(f"Incomplete existing case; preserved without overwriting: {target}")
-        print(f"  [재사용] {case_id} | r={radius_over_rd:g}RD")
-        return case_id
+    if input_path.exists() and not np.isclose(load_case_input(input_path)["radius_over_rd"], radius_over_rd):
+        raise ValueError("FATO and SA must use separate output roots")
     for path in (out / "inputs").glob("input_*.npz"):
+        if path == input_path:
+            continue
         if load_case_input(path)["source_folder"] == source_folder:
             raise RuntimeError(f"Existing source case has different metadata; preserved: {path}")
+    z_max_m = sampling_z_max(ground_z_m, z_max_m, disk_radius_m)
     points, theta, z_m, z_over_rd, cylinder_radius_m = _make_cylinder_points(
         center_x, center_y, disk_radius_m, ground_z_m, z_max_m, nz, ntheta, radius_over_rd
     )
@@ -153,7 +150,7 @@ def _extract_surface(
     print(
         f"  [완료] {case_id} | surface(z,theta)={velocity_nd.shape[:2]} | "
         f"r={radius_over_rd:.1f}R_D={cylinder_radius_m:.4f} m | "
-        f"ground_z={ground_z_m:.4f} m -> mesh z_max={z_max_m:.4f} m | "
+        f"ground_z={ground_z_m:.4f} m -> sampling z_max={z_max_m:.4f} m | "
         f"D={rotor_diameter_m:.4f} m | DL={disk_loading:.4f} N/m^2 (total thrust 30000 N)"
     )
 

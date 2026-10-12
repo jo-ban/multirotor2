@@ -10,6 +10,7 @@ TARGET_SCALE = 100.0
 DEFAULT_SHAPE_ZTHETA = (256, 256)
 FIXED_RD_M = 9.3101751
 CYLINDER_RADIUS_OVER_RD = 2.0
+SAMPLING_HEIGHT_OVER_RD = 2.0
 SA_RADIUS_OVER_RD = 2.5
 CYLINDER_RADII_OVER_RD = [CYLINDER_RADIUS_OVER_RD, SA_RADIUS_OVER_RD]
 TOTAL_THRUST_N = 30000.0
@@ -169,6 +170,13 @@ def make_case_id(l_over_d, disk_radius_m, height_over_rd):
     )
 
 
+def sampling_z_max(ground_z_m, z_max_m, disk_radius_m):
+    """Cap the sampling surface at 2RD above ground, within the mesh."""
+    if not np.isfinite([ground_z_m, z_max_m, disk_radius_m]).all() or disk_radius_m <= 0 or z_max_m <= ground_z_m:
+        raise ValueError("Require finite ground_z < z_max and RD > 0")
+    return min(float(z_max_m), float(ground_z_m) + SAMPLING_HEIGHT_OVER_RD * float(disk_radius_m))
+
+
 def make_input_surface(l_over_d, z_over_rd, shape_ztheta, height_over_rd):
     """원통 전개면용 2D U-Net 입력을 만든다.
 
@@ -179,7 +187,7 @@ def make_input_surface(l_over_d, z_over_rd, shape_ztheta, height_over_rd):
 
     CH4: h/RD (지면 대비 로터 높이 / 외접반경, 케이스별 상수)
 
-    반환 shape: (5, Nz, Ntheta). 행은 ground_z부터 mesh z_max까지 증가한다.
+    반환 shape: (5, Nz, Ntheta). 행은 지면부터 최대 지면+2RD까지 증가한다.
     """
     nz, ntheta = map(int, shape_ztheta)
     if nz < 16 or ntheta < 16 or nz % 16 or ntheta % 16:
