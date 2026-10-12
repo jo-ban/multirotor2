@@ -4,7 +4,8 @@ import numpy as np
 
 
 COORDINATE_SYSTEM = "absolute_z_over_rd_v1"
-INPUT_CHANNELS = ("L/D", "sin(theta)", "cos(theta)", "z/R_D")
+INPUT_CHANNELS = ("L/D", "sin(theta)", "cos(theta)", "z/R_D", "h/RD")
+IN_CHANNELS = len(INPUT_CHANNELS)
 TARGET_SCALE = 100.0
 DEFAULT_SHAPE_ZTHETA = (256, 256)
 FIXED_RD_M = 9.3101751
@@ -133,18 +134,28 @@ def center_from_row(row):
     return x, y
 
 
-def rotor_ground_z_from_row(row):
-    """로터면과 지면의 실제 OpenFOAM z 좌표 [m]를 읽는다."""
-    rotor_z = _first_numeric(row, ("rotor_z", "rotor_z_m", "z_rotor"))
-    ground_z = _first_numeric(row, ("ground_z", "ground_z_m", "z_ground"))
-    if np.isclose(rotor_z, ground_z):
-        raise ValueError("rotor_z와 ground_z는 서로 달라야 합니다.")
-    return rotor_z, ground_z
+def validate_height_over_rd(value):
+    """Dimensionless ground-to-rotor clearance h/RD; already normalized."""
+    value = float(value)
+    if not np.isfinite(value) or value <= 0:
+        raise ValueError("h/RD must be finite and positive")
+    return value
 
 
 def height_over_rd_from_row(row):
-    rotor_z, ground_z = rotor_ground_z_from_row(row)
-    return abs(rotor_z - ground_z) / disk_radius_from_row(row)
+    value = _geometry_value(row, ("h/RD", "h_over_rd", "height_over_rd"))
+    if value is None:
+        raise ValueError("CSV requires h/RD (dimensionless); rotor_z is not an input column")
+    return validate_height_over_rd(value)
+
+
+def rotor_ground_z_from_row(row):
+    """Derive absolute rotor z from CSV h/RD and actual ground z."""
+    ground_z = _first_numeric(row, ("ground_z", "ground_z_m", "z_ground"))
+    if not np.isfinite(ground_z):
+        raise ValueError("ground_z must be finite")
+    rotor_z = ground_z + height_over_rd_from_row(row) * disk_radius_from_row(row)
+    return rotor_z, ground_z
 
 
 def _token(value):
@@ -158,7 +169,7 @@ def make_case_id(l_over_d, disk_radius_m, height_over_rd):
     )
 
 
-def make_input_surface(l_over_d, z_over_rd, shape_ztheta):
+def make_input_surface(l_over_d, z_over_rd, shape_ztheta, height_over_rd):
     """원통 전개면용 2D U-Net 입력을 만든다.
 
     CH0: L/D (케이스별 스칼라 값)
@@ -166,7 +177,9 @@ def make_input_surface(l_over_d, z_over_rd, shape_ztheta):
     CH2: cos(theta)
     CH3: z/R_D (OpenFOAM 실제 z 좌표 / 외접반경)
 
-    반환 shape: (4, Nz, Ntheta). 행은 ground_z부터 mesh z_max까지 증가한다.
+    CH4: h/RD (지면 대비 로터 높이 / 외접반경, 케이스별 상수)
+
+    반환 shape: (5, Nz, Ntheta). 행은 ground_z부터 mesh z_max까지 증가한다.
     """
     nz, ntheta = map(int, shape_ztheta)
     if nz < 16 or ntheta < 16 or nz % 16 or ntheta % 16:
@@ -177,11 +190,13 @@ def make_input_surface(l_over_d, z_over_rd, shape_ztheta):
     if z_over_rd.shape != (nz,) or not np.isfinite(z_over_rd).all() or not np.all(np.diff(z_over_rd) > 0):
         raise ValueError("z/R_D must be a finite, strictly increasing vector of length Nz")
 
-    image = np.empty((4, nz, ntheta), dtype=np.float32)
+    height_over_rd = validate_height_over_rd(height_over_rd)
+    image = np.empty((IN_CHANNELS, nz, ntheta), dtype=np.float32)
     image[0].fill(float(l_over_d))
     image[1] = np.broadcast_to(np.sin(theta)[None, :], (nz, ntheta))
     image[2] = np.broadcast_to(np.cos(theta)[None, :], (nz, ntheta))
     image[3] = np.broadcast_to(z_over_rd[:, None], (nz, ntheta))
+    image[4].fill(height_over_rd)
     return image
 
 
@@ -198,6 +213,13 @@ def load_case_input(input_path):
         data = {key: archive[key] for key in archive.files}
     if str(data.get("coordinate_system", "")) != COORDINATE_SYSTEM:
         raise ValueError(f"{input_path}: re-extract ground-to-mesh-top z/R_D data into a new directory")
+    height_over_rd = validate_height_over_rd(data["height_over_rd"])
+    rd = float(data["disk_radius_m"])
+    if not np.isfinite(rd) or rd <= 0:
+        raise ValueError("Dataset RD must be finite and positive")
+    if not np.isclose(float(data["rotor_z_m"]) - float(data["ground_z_m"]),
+                      height_over_rd * rd, rtol=1e-6, atol=1e-6):
+        raise ValueError("Dataset h/RD does not match ground-to-rotor clearance; re-extract")
     return {
         "z_m": np.asarray(data["z_m"], dtype=np.float32),
         "z_over_rd": np.asarray(data["z_over_rd"], dtype=np.float32),
@@ -214,7 +236,7 @@ def load_case_input(input_path):
         "rotor_z_m": float(data["rotor_z_m"]),
         "ground_z_m": float(data["ground_z_m"]),
         "height_m": float(data["height_m"]),
-        "height_over_rd": float(data["height_over_rd"]),
+        "height_over_rd": height_over_rd,
         "shape_ztheta": tuple(int(x) for x in data["shape_ztheta"]),
     }
 
@@ -265,9 +287,9 @@ def validation_ids_from_frame(data_root, dataframe):
 def validate_checkpoint(checkpoint, expected_rd=None, expected_radius_over_rd=None):
     if (checkpoint.get("coordinate_system") != COORDINATE_SYSTEM
             or tuple(checkpoint.get("input_channels", ())) != INPUT_CHANNELS
-            or checkpoint.get("in_channels") != 4
-            or checkpoint["state_dict"]["enc1.block.0.conv.weight"].shape[1] != 4):
-        raise ValueError("A newly trained 4-channel z/R_D checkpoint is required; old s/R_D and 5-channel weights are incompatible")
+            or checkpoint.get("in_channels") != IN_CHANNELS
+            or checkpoint["state_dict"]["enc1.block.0.conv.weight"].shape[1] != IN_CHANNELS):
+        raise ValueError("A newly trained 5-channel (L/D, sin, cos, z/R_D, h/RD) checkpoint is required; previous weights are incompatible")
     if expected_rd is not None and "disk_radius_m" in checkpoint:
         if not np.isclose(float(checkpoint["disk_radius_m"]), expected_rd, rtol=1e-6, atol=1e-7):
             raise ValueError("Prediction RD differs from the fixed RD used for training")

@@ -74,7 +74,11 @@ def _extract_surface(
         raise ValueError(f"ground_z={ground_z_m} must lie in mesh z bounds [{z_min_m}, {z_max_m})")
     nz, ntheta = map(int, RESOLUTION_Z_THETA)
     out = Path(output_root)
-    height_over_rd = abs(rotor_z_m - ground_z_m) / disk_radius_m
+    height_over_rd = (rotor_z_m - ground_z_m) / disk_radius_m
+    if not np.isfinite(height_over_rd) or height_over_rd <= 0:
+        raise ValueError("Require positive ground-to-rotor h/RD")
+    if not ground_z_m < rotor_z_m < z_max_m:
+        raise ValueError("Rotor height derived from h/RD must lie between ground and mesh z_max")
     source_folder = str(source_folder if source_folder is not None else case_path.name).strip().replace("\\", "/")
     identity = repr((source_folder, rotor_spacing_m, rotor_diameter_m, rotor_z_m, ground_z_m, z_max_m, disk_loading, center_x, center_y))
     suffix = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
@@ -136,7 +140,7 @@ def _extract_surface(
         center_xy_m=np.asarray((center_x, center_y), dtype=np.float32),
         rotor_z_m=np.float32(rotor_z_m),
         ground_z_m=np.float32(ground_z_m),
-        height_m=np.float32(abs(rotor_z_m - ground_z_m)),
+        height_m=np.float32(rotor_z_m - ground_z_m),
         height_over_rd=np.float32(height_over_rd),
         shape_ztheta=np.asarray((nz, ntheta), dtype=np.int32),
         theta_rad=theta.astype(np.float32),

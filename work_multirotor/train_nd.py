@@ -15,6 +15,7 @@ from data_utils_cylindrical import (
     SA_RADIUS_OVER_RD,
     COORDINATE_SYSTEM,
     INPUT_CHANNELS,
+    IN_CHANNELS,
     find_case_ids,
     validation_ids_from_frame,
     case_ids_for_rows,
@@ -69,7 +70,7 @@ class CylindricalSurfaceDataset(Dataset):
         case_id = self.case_ids[index]
         meta = load_case_input(self.root / "inputs" / f"input_{case_id}.npz")
         inputs = make_input_surface(
-            meta["l_over_d"], meta["z_over_rd"], meta["shape_ztheta"]
+            meta["l_over_d"], meta["z_over_rd"], meta["shape_ztheta"], meta["height_over_rd"]
         )
         targets = [np.load(self.root / f"targets_{c}" / f"{c}_{case_id}.npy").astype(np.float32)
                    for c in COMPONENTS]
@@ -90,7 +91,7 @@ class CylindricalSurfaceDataset(Dataset):
 
 def save_checkpoint(model, path, dataset, epoch, losses, lambda_gradient, base_channels):
     torch.save(dict(state_dict=model.state_dict(), model_format=MODEL_FORMAT,
-                    output_channels=OUTPUT_CHANNELS, in_channels=4, out_channels=3,
+                    output_channels=OUTPUT_CHANNELS, in_channels=IN_CHANNELS, out_channels=3,
                     base_channels=base_channels, disk_radius_m=float(dataset.disk_radius_m),
                     radius_over_rd=float(dataset.radius_over_rd),
                     coordinate_system=COORDINATE_SYSTEM, input_channels=INPUT_CHANNELS,
@@ -109,7 +110,7 @@ def train_joint(device, data_root=DATA_ROOT, csv_path=CSV_PATH, model_dir=Path("
     dataset = CylindricalSurfaceDataset(data_root, csv_path)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0,
                         pin_memory=device.type == "cuda")
-    model = CylindricalUNet2D(in_channels=4, out_channels=3, base_channels=base_channels).to(device)
+    model = CylindricalUNet2D(in_channels=IN_CHANNELS, out_channels=3, base_channels=base_channels).to(device)
     optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
     destination = Path(model_dir)
     destination.mkdir(parents=True, exist_ok=True)

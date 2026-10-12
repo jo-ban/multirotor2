@@ -6,6 +6,7 @@ import numpy as np
 from data_utils_cylindrical import (
     validation_ids_from_frame,
     TARGET_SCALE,
+    IN_CHANNELS,
     CYLINDER_RADIUS_OVER_RD,
     SA_RADIUS_OVER_RD,
     cartesian_to_cylindrical_velocity,
@@ -39,7 +40,7 @@ def load_model(component, device, model_dir=None, expected_rd=None,
     if checkpoint["state_dict"]["out_conv.weight"].shape[0] != 1:
         raise ValueError("Legacy component loader requires one Cartesian channel; use load_joint_model for joint cylindrical weights")
     model = CylindricalUNet2D(
-        in_channels=4,
+        in_channels=IN_CHANNELS,
         out_channels=1,
         base_channels=int(checkpoint.get("base_channels", 16)),
     ).to(device)
@@ -56,7 +57,7 @@ def evaluate_case(case_id, device, show_plot=True, data_root=DATA_ROOT, model_di
     data_root = Path(data_root)
     meta = load_case_input(data_root / "inputs" / f"input_{case_id}.npz")
     input_array = make_input_surface(
-        meta["l_over_d"], meta["z_over_rd"], meta["shape_ztheta"]
+        meta["l_over_d"], meta["z_over_rd"], meta["shape_ztheta"], meta["height_over_rd"]
     )
     inputs = torch.from_numpy(input_array[None, ...]).to(device)
     cfd_nd = {
@@ -187,7 +188,7 @@ def regenerate_results(output_dir):
         writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
-    print(f"Updated HTML, PNG and RD-limited error CSV: {output}")
+    print(f"Updated HTML, PNG and full-z error CSV: {output}")
 
 
 if __name__ == "__main__":

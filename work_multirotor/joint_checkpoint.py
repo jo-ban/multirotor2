@@ -4,11 +4,11 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from data_utils_cylindrical import TARGET_SCALE, validate_checkpoint
+from data_utils_cylindrical import TARGET_SCALE, validate_checkpoint, IN_CHANNELS
 from model_cylindrical import CylindricalUNet2D
 
 MODEL_FILENAME = "rotor_unet_cyl2d_joint_best.pth"
-MODEL_FORMAT = "joint_cylindrical_velocity_v1"
+MODEL_FORMAT = "joint_cylindrical_velocity_height_v2"
 OUTPUT_CHANNELS = ("ur", "utheta", "uz")
 
 
@@ -20,7 +20,7 @@ def load_joint_model(device, model_dir=None, expected_rd=None, expected_radius_o
         raise FileNotFoundError(f"Joint checkpoint missing: {path}.{hint}")
     checkpoint = torch.load(path, map_location=device, weights_only=True)
     validate_joint_checkpoint(checkpoint, expected_rd, expected_radius_over_rd)
-    model = CylindricalUNet2D(in_channels=4, out_channels=3,
+    model = CylindricalUNet2D(in_channels=IN_CHANNELS, out_channels=3,
                              base_channels=int(checkpoint["base_channels"])).to(device)
     try:
         model.load_state_dict(checkpoint["state_dict"])

@@ -131,7 +131,7 @@ def _component_figure(theta_deg, z_m, radius_m, cfd, prediction, case_id="", vie
                 marker = go.Scatter(x=[] if p is None else [p['theta_deg']], y=[] if p is None else [p['z_m']], **common)
             fig.add_trace(marker, row=1, col=3)
     fig.update_layout(title=(f"{escape(str(case_id))} · CFD / prediction / absolute error · r={radius:.4f} m"
-                             f"<br><sup>Display/metrics: {bounds[0]:.6g} ≤ z ≤ {bounds[1]:.6g} m (z ≤ RD); original samples</sup>"
+                             f"<br><sup>Display/metrics: {bounds[0]:.6g} ≤ z ≤ {bounds[1]:.6g} m; full z grid, original samples</sup>"
                              "<br><sup>NMAE = MAE / mean |CFD| × 100; point rate = |prediction-CFD| / |CFD| × 100; CFD=0 excluded from rate</sup>"),
                       template="plotly_white", height=800, width=1650, margin=dict(l=40, r=430, t=240, b=45),
                       showlegend=False, uirevision="validation")
@@ -217,7 +217,7 @@ def build_static_figure(theta_deg, z_m, radius_m, cfd, prediction, case_id="", r
         nmae = stats[key]["nmae_pct"]
         rate = "N/A" if nmae is None else f"{nmae:.3g}%"
         ax.set_title(f"Absolute error · {label}\nMAE={stats[key]['mae_mps']:.5f} m/s; NMAE={rate}")
-    fig.suptitle(f"{case_id} | r={radius_over_rd:g}RD | {bounds[0]:.6g} <= z <= {bounds[1]:.6g} m (z <= RD)\n"
+    fig.suptitle(f"{case_id} | r={radius_over_rd:g}RD | {bounds[0]:.6g} <= z <= {bounds[1]:.6g} m (full z grid)\n"
                  "NMAE = MAE / mean |CFD| x 100; point rate = |prediction-CFD| / |CFD| x 100\n"
                  "Zero CFD excluded from point rate; extrema use original displayed samples; ties: first z, then theta",
                  fontsize=12)

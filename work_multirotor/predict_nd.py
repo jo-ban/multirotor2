@@ -12,10 +12,12 @@ from data_utils_cylindrical import (
     TARGET_SCALE,
     COORDINATE_SYSTEM,
     INPUT_CHANNELS,
+    IN_CHANNELS,
     validate_checkpoint,
     plot_extent,
     make_input_surface,
     FIXED_RD_M,
+    validate_height_over_rd,
     geometry_from_rd_ratio,
     disk_loading_from_diameter,
 )
@@ -38,7 +40,7 @@ def load_component_model(component, device, model_dir=None, expected_rd=None,
     if checkpoint["state_dict"]["out_conv.weight"].shape[0] != 1:
         raise ValueError("Legacy component loader requires one Cartesian channel; use load_joint_model for joint cylindrical weights")
     model = CylindricalUNet2D(
-        in_channels=4,
+        in_channels=IN_CHANNELS,
         out_channels=1,
         base_channels=int(checkpoint.get("base_channels", 16)),
     ).to(device)
@@ -51,7 +53,7 @@ def predict_cylindrical_surface(
     disk_radius_m,
     l_over_d,
     disk_loading,
-    rotor_z_m,
+    height_over_rd,
     ground_z_m,
     z_max_m,
     shape_ztheta=DEFAULT_SHAPE_ZTHETA,
@@ -80,17 +82,18 @@ def predict_cylindrical_surface(
     # Recompute for the requested geometry, never reuse a reference case's DL.
     disk_loading = disk_loading_from_diameter(rotor_diameter_m)
     print(f"Total thrust=30000 N | D={rotor_diameter_m:.4f} m | DL={disk_loading:.4f} N/m^2")
-    height_m = abs(float(rotor_z_m) - float(ground_z_m))
-    if height_m <= 0:
-        raise ValueError("rotor_z_m과 ground_z_m은 서로 달라야 합니다.")
-    height_over_rd = height_m / disk_radius_m
+    height_over_rd = validate_height_over_rd(height_over_rd)
+    height_m = height_over_rd * disk_radius_m
+    rotor_z_m = float(ground_z_m) + height_m
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if not np.isfinite([ground_z_m, z_max_m]).all() or z_max_m <= ground_z_m:
         raise ValueError("Require finite --z-max > --ground-z")
+    if not ground_z_m < rotor_z_m < z_max_m:
+        raise ValueError("Rotor height derived from h/RD must lie between ground and z_max")
     nz, ntheta = map(int, shape_ztheta)
     z_m = np.linspace(ground_z_m, z_max_m, nz, dtype=np.float32)
     z_over_rd = z_m / disk_radius_m
-    input_surface = make_input_surface(l_over_d, z_over_rd, shape_ztheta)
+    input_surface = make_input_surface(l_over_d, z_over_rd, shape_ztheta, height_over_rd)
     inputs = torch.from_numpy(input_surface[None, ...]).to(device)
 
     model, scale = load_joint_model(device, model_dir, disk_radius_m, radius_over_rd)
@@ -158,7 +161,7 @@ def predict_cylindrical_surface(
             ax.set_title(title)
             ax.set_xlabel("azimuth theta [deg]")
             ax.set_ylabel("z [m]")
-            ax.set_ylim(float(z_m[0]), min(float(z_m[-1]), float(disk_radius_m)))
+            ax.set_ylim(float(z_m[0]), float(z_m[-1]))
             fig.colorbar(image, ax=ax, label="m/s")
         plt.suptitle(f"Cylinder r={radius_over_rd:g}R_D prediction | L/D={l_over_d:.3f}")
         plt.tight_layout()
@@ -205,7 +208,7 @@ if __name__ == "__main__":
     parser.add_argument("--rd", type=float, default=FIXED_RD_M, help="Fixed outer radius RD [m] (default: 9.3101751)")
     parser.add_argument("--l-over-d", type=float, default=1.5, help="Rotor spacing / rotor diameter")
     parser.add_argument("--disk-loading", type=float, help="Deprecated, ignored: DL is calculated from D and total thrust 30000 N")
-    parser.add_argument("--rotor-z", type=float, default=9.3101752)
+    parser.add_argument("--h-over-rd", type=float, required=True, help="Dimensionless ground-to-rotor clearance h/RD")
     parser.add_argument("--ground-z", type=float, required=True, help="Actual ground z [m]")
     parser.add_argument("--z-max", type=float, required=True, help="Mesh maximum z [m]; use the value reported by extraction")
     parser.add_argument("--no-show", action="store_true")
@@ -218,7 +221,7 @@ if __name__ == "__main__":
         disk_radius_m=args.rd,
         l_over_d=args.l_over_d,
         disk_loading=args.disk_loading,
-        rotor_z_m=args.rotor_z,
+        height_over_rd=args.h_over_rd,
         ground_z_m=args.ground_z,
         z_max_m=args.z_max,
         shape_ztheta=(256, 256),

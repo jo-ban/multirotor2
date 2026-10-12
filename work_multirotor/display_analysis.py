@@ -1,4 +1,4 @@
-"""RD-limited display and full-resolution error statistics (physical SI units)."""
+"""Full-z display and full-resolution error statistics (physical SI units)."""
 import numpy as np
 from data_utils_cylindrical import CYLINDER_RADIUS_OVER_RD, CYLINDER_RADII_OVER_RD
 
@@ -6,16 +6,13 @@ FIELDS = ("u_r", "u_theta", "u_z", "magnitude")
 
 
 def display_window(z_m, rd_m):
-    """Keep absolute z <= RD, retaining the existing lower z bound."""
+    """Keep every sampled z row, including the mesh upper endpoint."""
     z = np.asarray(z_m, dtype=float)
     rd = float(rd_m)
     if (z.ndim != 1 or z.size < 2 or not np.isfinite(z).all()
             or not np.all(np.diff(z) > 0) or not np.isfinite(rd) or rd <= 0):
         raise ValueError("Expected increasing finite z [m] and positive RD [m]")
-    mask = z <= rd
-    if not mask.any() or min(rd, z[-1]) <= z[0]:
-        raise ValueError("No nonempty display interval at z <= RD")
-    return mask, (float(z[0]), float(min(rd, z[-1])))
+    return np.ones(z.shape, dtype=bool), (float(z[0]), float(z[-1]))
 
 
 def error_statistics(theta_deg, z_m, radius_m, cfd, prediction, rd_m=None, radius_over_rd=CYLINDER_RADIUS_OVER_RD):
